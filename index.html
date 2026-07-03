@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GeoGuessr 朋友破冰版 v3</title>
+    <title>GeoGuessr 朋友破冰版 v4</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -18,19 +18,22 @@
         button:disabled { background: #4c4c52; cursor: not-allowed; }
 
         #game-screen { display: none; flex-direction: column; height: 100%; }
-        #header { height: 60px; background: #202024; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; font-weight: bold; }
+        #header { height: 60px; background: #202024; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; font-weight: bold; z-index: 10; }
         #timer { font-size: 24px; color: #ffd166; }
-        #img-box { height: 38%; background: #000; display: flex; justify-content: center; align-items: center; }
+        #img-box { height: 38%; background: #000; display: flex; justify-content: center; align-items: center; position: relative; }
         #img-box img { max-height: 100%; max-width: 100%; object-fit: contain; }
         #map { height: 48%; width: 100%; z-index: 1; }
-        #lock-btn { height: 8%; width: 100%; background: #06d6a0; font-size: 18px; }
+        #lock-btn { height: 8%; width: 100%; background: #06d6a0; font-size: 18px; z-index: 10; }
 
         .rank-list { width: 100%; max-width: 500px; background: #202024; border-radius: 12px; padding: 20px; overflow-y: auto; max-height: 45vh; margin: 15px 0; }
         .rank-item { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #323238; font-size: 18px; }
         .rank-item:first-child { color: #ffd166; font-weight: bold; }
-        .status-msg { margin-top: 10px; color: #a4a4a8; font-style: italic; }
+        .status-msg { margin-top: 10px; color: #a4a4a8; font-style: italic; text-align: center; }
         .host-control { background: #ff5722; margin-top: 10px; }
         .host-reset { background: #dc3545; margin-top: 10px; }
+        
+        /* 揭曉答案覆蓋面板 */
+        #reveal-panel { position: absolute; top: 10px; left: 10px; right: 10px; background: rgba(32, 32, 36, 0.95); padding: 15px; border-radius: 8px; z-index: 1000; text-align: center; border: 1px solid #323238; display: none; }
     </style>
 </head>
 <body>
@@ -51,7 +54,7 @@
             
             <div id="host-lobby-zone" style="display:none;">
                 <button class="host-control" onclick="hostChangeState('playing', 0, 30)">主辦方：正式開始第一題</button>
-                <button class="host-reset" onclick="hostResetEntireGame()">主辦方：重置整房分數與重開</button>
+                <button class="host-reset" onclick="hostResetEntireGame()">主辦方：強制重置整房並踢出玩家</button>
             </div>
             
             <p class="status-msg" id="lobby-guest-msg">等待關主發起遊戲，請勿離開此畫面...</p>
@@ -60,10 +63,19 @@
 
     <div id="game-screen">
         <div id="header">
-            <div>題號: <span id="round-num">1</span>/20</div>
+            <div>題號: <span id="round-num">1</span>/<span id="total-rounds">31</span></div>
             <div id="timer">30s</div>
             <div>得分: <span id="my-score">0</span></div>
         </div>
+        
+        <div id="reveal-panel">
+            <h3 style="color: #06d6a0; margin-bottom: 5px;">📍 本輪正確答案已揭曉</h3>
+            <p id="reveal-dist-text">誤差距離：-- 公里</p>
+            <div id="host-reveal-zone" style="display:none;">
+                <button class="host-control" style="padding: 6px 12px; font-size: 14px;" onclick="hostChangeState('ranking', activeRound)">主辦方：查看即時排行</button>
+            </div>
+        </div>
+
         <div id="img-box">
             <img id="current-img" src="" alt="題目相片">
         </div>
@@ -77,7 +89,7 @@
         
         <div id="host-rank-zone" style="display:none; width:100%; max-width:500px;">
             <button id="host-next-btn" class="host-control" onclick="hostNextRound()">主辦方：進入下一題</button>
-            <button class="host-reset" onclick="hostResetEntireGame()">主辦方：結束並重新開始整輪</button>
+            <button class="host-reset" onclick="hostResetEntireGame()">主辦方：結束並重新重置整房</button>
         </div>
 
         <p class="status-msg" id="next-round-hint">等待關主切換下一輪...</p>
@@ -107,7 +119,7 @@
         const HOST_PASSWORD = "boss"; 
 
         // ==========================================
-        // 🗺️ 題庫資料 (圖片改為讀取同專案 photos 資料夾)
+        // 🗺️ 題庫資料 (已完全併入舊題20張與全新追加11張，共31張)
         // ==========================================
         const quizData = [
             { file: "20230709_150126.jpg", lat: 25.032106, lng: 121.592934 },
@@ -129,7 +141,19 @@
             { file: "PXL_20251220_062533161.TS-000.jpg", lat: 25.042486, lng: 121.502225 },
             { file: "PXL_20251227_115304895.TS-000.MP.jpg", lat: 25.077919, lng: 121.392861 },
             { file: "PXL_20260314_104654093.jpg", lat: 24.936092, lng: 121.214183 },
-            { file: "PXL_20260321_084933273.MP.jpg", lat: 24.793036, lng: 120.973281 }
+            { file: "PXL_20260321_084933273.MP.jpg", lat: 24.793036, lng: 120.973281 },
+            // ✨ 以下為新追加題庫 11 張
+            { file: "1713708448695.jpg", lat: 25.050606, lng: 121.560149 },
+            { file: "1722347231690.jpg", lat: 22.655983, lng: 121.474149 },
+            { file: "1751109088715.jpg", lat: 25.112896, lng: 121.919966 },
+            { file: "1757761460555.jpg", lat: 25.074364, lng: 121.375577 },
+            { file: "1758447316274.jpg", lat: 25.044673, lng: 121.503199 },
+            { file: "1777209107392.jpg", lat: 25.037559, lng: 121.563825 },
+            { file: "DSCF6169.jpg", lat: 25.169056, lng: 121.441545 },
+            { file: "FB_IMG_1731288326902.jpg", lat: 24.839615, lng: 121.183837 },
+            { file: "FB_IMG_1745319859537.jpg", lat: 25.097950, lng: 121.371808 },
+            { file: "FB_IMG_1762762326096.jpg", lat: 25.093549, lng: 121.571385 },
+            { file: "FB_IMG_1782644906744.jpg", lat: 25.102456, lng: 121.316919 }
         ];
 
         let myName = "";
@@ -140,6 +164,8 @@
         let isHost = false;
         let activeRound = 0;
         let hostClockInterval = null;
+
+        document.getElementById('total-rounds').innerText = quizData.length;
 
         function initMap() {
             if (map) return;
@@ -165,6 +191,7 @@
                 isHost = true;
                 document.getElementById('host-lobby-zone').style.display = 'block';
                 document.getElementById('host-rank-zone').style.display = 'block';
+                document.getElementById('host-reveal-zone').style.display = 'block';
                 document.getElementById('lobby-guest-msg').innerText = "🔑 您已身為認證關主，請等待玩家到齊後點擊開始。";
             }
 
@@ -177,13 +204,19 @@
                 }
             });
 
-            // 監聽並同步玩家自己的總分
+            // 實時監聽是否被關主踢除或房被清空
             db.ref(`room/players/${myName}`).on('value', snapshot => {
                 if (snapshot.exists()) {
                     totalScore = snapshot.val().score || 0;
                     document.getElementById('my-score').innerText = totalScore;
                 } else {
-                    db.ref(`room/players/${myName}`).set({ score: 0, lastScore: 0 });
+                    // 如果被移除了，且自己不是關主，就強制踢回首頁重新加入
+                    if (myName.toLowerCase() !== HOST_PASSWORD.toLowerCase() && document.getElementById('login-screen').classList.contains('active') === false) {
+                        alert("遊戲已由主辦人重置，請重新輸入暱稱加入！");
+                        location.reload(); 
+                    } else {
+                        db.ref(`room/players/${myName}`).set({ score: 0, lastScore: 0 });
+                    }
                 }
             });
 
@@ -204,12 +237,14 @@
                 }
 
                 if (state.status === "lobby") {
-                    // 全局重置回大廳時，非關主玩家重置本地狀態
                     if(!isHost) { totalScore = 0; document.getElementById('my-score').innerText = 0; }
                     hasLocked = false; currentGuess = null;
+                    document.getElementById('reveal-panel').style.display = 'none';
                     switchScreen('lobby-screen');
                 } else if (state.status === "playing") {
                     startRoundUI(state.round, state.timer);
+                } else if (state.status === "reveal") {
+                    revealAnswerUI(state.round);
                 } else if (state.status === "ranking") {
                     showRankUI(state.round, state.timer);
                 } else if (state.status === "finished") {
@@ -229,10 +264,13 @@
             switchScreen('game-screen');
             initMap();
             
-            if (correctMarker) map.removeLayer(correctMarker);
-            if (linePath) map.removeLayer(linePath);
+            document.getElementById('reveal-panel').style.display = 'none';
+            
+            if (correctMarker) { map.removeLayer(correctMarker); correctMarker = null; }
+            if (linePath) { map.removeLayer(linePath); linePath = null; }
             
             if (!hasLocked) {
+                document.getElementById('lock-btn').style.display = 'block';
                 document.getElementById('lock-btn').disabled = false;
                 document.getElementById('lock-btn').style.background = "#06d6a0";
                 document.getElementById('lock-btn').innerText = "鎖定此地點！";
@@ -240,8 +278,6 @@
             
             document.getElementById('round-num').innerText = roundIdx + 1;
             document.getElementById('timer').innerText = serverTimer + "s";
-            
-            // 讀取相對路徑資料夾 photos 內的圖片
             document.getElementById('current-img').src = `./photos/${quizData[roundIdx].file}`;
             
             if (serverTimer <= 0 && !hasLocked) {
@@ -266,6 +302,47 @@
 
             document.getElementById('my-score').innerText = totalScore;
             db.ref(`room/players/${myName}`).update({ score: totalScore, lastScore: roundScore });
+        }
+
+        // 🌟 新增公佈答案畫面邏輯 (所有人留在此分頁看地圖答案)
+        function revealAnswerUI(roundIdx) {
+            switchScreen('game-screen');
+            document.getElementById('lock-btn').style.display = 'none';
+            document.getElementById('timer').innerText = "已開牌";
+            
+            const target = quizData[roundIdx];
+            let dist = null;
+
+            if (currentGuess) {
+                dist = getDistance(currentGuess.lat, currentGuess.lng, target.lat, target.lng);
+                document.getElementById('reveal-dist-text').innerText = `📐 你的誤差距離：${dist.toFixed(2)} 公里`;
+            } else {
+                document.getElementById('reveal-dist-text').innerText = `❌ 你這回合沒有選定任何地方！`;
+            }
+
+            document.getElementById('reveal-panel').style.display = 'block';
+
+            // 畫出標準答案
+            if (map) {
+                if (!correctMarker) {
+                    correctMarker = L.marker([target.lat, target.lng], {
+                        icon: L.icon({
+                            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+                            iconSize: [25, 41], iconAnchor: [12, 41]
+                        })
+                    }).addTo(map).bindPopup("✨ 正確答案在此！").openPopup();
+                }
+
+                if (currentGuess && !linePath) {
+                    linePath = L.polyline([currentGuess, [target.lat, target.lng]], {color: '#ff4757', weight: 4, dashArray: '5, 10'}).addTo(map);
+                    // 視角縮放到能包容兩點
+                    const group = new L.featureGroup([guessMarker, correctMarker]);
+                    map.fitBounds(group.getBounds().pad(0.2));
+                } else {
+                    map.setView([target.lat, target.lng], 10);
+                }
+            }
+            hasLocked = false; 
         }
 
         function showRankUI(roundIdx, serverTimer) {
@@ -294,20 +371,6 @@
                         </div>`;
                 });
             });
-
-            if (map && currentGuess) {
-                const target = quizData[roundIdx];
-                if (!correctMarker) {
-                    correctMarker = L.marker([target.lat, target.lng], {
-                        icon: L.icon({
-                            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-                            iconSize: [25, 41], iconAnchor: [12, 41]
-                        })
-                    }).addTo(map);
-                    linePath = L.polyline([currentGuess, [target.lat, target.lng]], {color: 'red'}).addTo(map);
-                }
-            }
-            hasLocked = false; 
         }
 
         function showFinalUI() {
@@ -325,7 +388,7 @@
         }
 
         // ==========================================
-        // 👑 關主時鐘大腦與重置邏輯
+        // 👑 關主控場時鐘大腦
         // ==========================================
         function hostChangeState(status, round, timer = 30) {
             if (!isHost) return;
@@ -344,7 +407,8 @@
                 if (currentTimer <= 0) {
                     clearInterval(hostClockInterval);
                     hostClockInterval = null;
-                    db.ref('room/state').update({ status: "ranking" });
+                    // 🌟 30秒到，全體自動切入獨立的「公佈答案 (reveal)」環節
+                    db.ref('room/state').update({ status: "reveal" });
                 }
             }, 1000);
         }
@@ -371,22 +435,20 @@
             }
         }
 
-        // 🔄 關主一鍵重啟整輪遊戲的核心功能
+        // 🔄 關主重置全房玩家功能（僅保留 boss，其餘踢出）
         function hostResetEntireGame() {
             if (!isHost) return;
             if (hostClockInterval) clearInterval(hostClockInterval);
             hostClockInterval = null;
 
-            if (confirm("確定要清除所有人的分數，重新開始新的一輪遊戲嗎？")) {
-                // 1. 清空資料庫內所有玩家的分數
-                db.ref('room/players').once('value', snapshot => {
-                    const players = snapshot.val() || {};
-                    Object.keys(players).forEach(name => {
-                        db.ref(`room/players/${name}`).set({ score: 0, lastScore: 0 });
-                    });
+            if (confirm("💥 警告：這會把除了你以外的「所有玩家踢回登入畫面」並清除全部分數，確定要重開嗎？")) {
+                // 1. 完全清空整個 players 節點
+                db.ref('room/players').remove().then(() => {
+                    // 2. 重新把自己(關主)加回去
+                    db.ref(`room/players/${myName}`).set({ score: 0, lastScore: 0 });
                 });
                 
-                // 2. 將全域狀態退回大廳狀態
+                // 3. 全局歸零回到大廳
                 totalScore = 0;
                 document.getElementById('my-score').innerText = 0;
                 db.ref('room/state').set({ status: "lobby", round: 0, timer: 30 });
