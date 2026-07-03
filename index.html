@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GeoGuessr 朋友破冰版 v2</title>
+    <title>GeoGuessr 朋友破冰版 v3</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -25,11 +25,12 @@
         #map { height: 48%; width: 100%; z-index: 1; }
         #lock-btn { height: 8%; width: 100%; background: #06d6a0; font-size: 18px; }
 
-        .rank-list { width: 100%; max-width: 500px; background: #202024; border-radius: 12px; padding: 20px; overflow-y: auto; max-height: 50vh; margin: 15px 0; }
+        .rank-list { width: 100%; max-width: 500px; background: #202024; border-radius: 12px; padding: 20px; overflow-y: auto; max-height: 45vh; margin: 15px 0; }
         .rank-item { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #323238; font-size: 18px; }
         .rank-item:first-child { color: #ffd166; font-weight: bold; }
         .status-msg { margin-top: 10px; color: #a4a4a8; font-style: italic; }
-        .host-control { background: #ff5722; margin-top: 15px; }
+        .host-control { background: #ff5722; margin-top: 10px; }
+        .host-reset { background: #dc3545; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -49,7 +50,8 @@
             <p style="margin: 20px 0; font-size: 18px;">目前已進房人數：<span id="lobby-count" style="font-weight:bold; color:#ffd166;">0</span> 人</p>
             
             <div id="host-lobby-zone" style="display:none;">
-                <button class="host-control" onclick="hostChangeState('playing', 0)">主辦方：正式開始第一題</button>
+                <button class="host-control" onclick="hostChangeState('playing', 0, 30)">主辦方：正式開始第一題</button>
+                <button class="host-reset" onclick="hostResetEntireGame()">主辦方：重置整房分數與重開</button>
             </div>
             
             <p class="status-msg" id="lobby-guest-msg">等待關主發起遊戲，請勿離開此畫面...</p>
@@ -59,7 +61,7 @@
     <div id="game-screen">
         <div id="header">
             <div>題號: <span id="round-num">1</span>/20</div>
-            <div id="timer">20s</div>
+            <div id="timer">30s</div>
             <div>得分: <span id="my-score">0</span></div>
         </div>
         <div id="img-box">
@@ -75,6 +77,7 @@
         
         <div id="host-rank-zone" style="display:none; width:100%; max-width:500px;">
             <button id="host-next-btn" class="host-control" onclick="hostNextRound()">主辦方：進入下一題</button>
+            <button class="host-reset" onclick="hostResetEntireGame()">主辦方：結束並重新開始整輪</button>
         </div>
 
         <p class="status-msg" id="next-round-hint">等待關主切換下一輪...</p>
@@ -86,7 +89,7 @@
 
     <script>
         // ==========================================
-        // 🛠️ CONFIG 區塊：請務必貼回你原本的 Firebase 設定
+        // 🛠️ CONFIG 區塊：請貼回你的 Firebase 設定
         // ==========================================
         const firebaseConfig = {
                   apiKey: "AIzaSyCLVPqDnLhjF_pj0sISOR73YFciNyeAd4I",
@@ -101,33 +104,32 @@
 	firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
-        // 🔐 關主永久金鑰（如果名字打這個，不管斷線幾次都會判定成關主）
         const HOST_PASSWORD = "boss"; 
 
         // ==========================================
-        // 🗺️ 題庫資料
+        // 🗺️ 題庫資料 (圖片改為讀取同專案 photos 資料夾)
         // ==========================================
         const quizData = [
-            { id: "1PYcSps-jN60FowJK3D4GatANPhapoAgR", lat: 25.032106, lng: 121.592934 },
-            { id: "1yB86RcQ7mOLdNRYo_yACGckFFLWqFwB8", lat: 23.491339, lng: 120.447616 },
-            { id: "1VaQ4A7liwK48rH3TI9KbcpzGzYqjqSw4", lat: 24.952717, lng: 121.357082 },
-            { id: "1oLFhBnjr3ILCFd6gK9XKwM4whxHanHQ5", lat: 25.164304, lng: 121.577856 },
-            { id: "19UCum3_aUbf5xLN0YrkQLRjvMaOsJd5y", lat: 25.017071, lng: 121.214192 },
-            { id: "1238R1vpAIqMBaJI0O8o_Eal8nTOx6aWE", lat: 24.972103, lng: 121.531156 },
-            { id: "1hdbjo_HZCvdKn7A3etgu2tBz1CLShzOw", lat: 22.652979, lng: 121.474908 },
-            { id: "1Py8vNU3KV0RsPnxiqa6EWjyLvD8-kyJL", lat: 24.820611, lng: 121.177894 },
-            { id: "1zFRrmHH8L8ecco1CxqmMUZoZz47cVWUJ", lat: 22.753066, lng: 121.147085 },
-            { id: "1vr_BN2Sx_ICoAxmueZ6LjAjWkRVQwwhU", lat: 25.108544, lng: 121.843560 },
-            { id: "1SGuJjOahCaZuoENRIPmjjFGuOJ_l_nxK", lat: 25.073916, lng: 121.375597 },
-            { id: "1s5TsUEJ9NlaT6noUJd-PjFETifTSscmJ", lat: 24.453292, lng: 120.847200 },
-            { id: "1bQe7o6MG6FNqHRMYRr8l87Mu6FhIepJg", lat: 25.048922, lng: 121.524233 },
-            { id: "1zSoOiVHY7mAM_WKfjsZOkl9rEiRBa5oV", lat: 25.083411, lng: 121.554978 },
-            { id: "1Yq2EZeJTnf39Ewe1fE6hBJ82od9hRmSk", lat: 24.882717, lng: 121.326442 },
-            { id: "1mCTDVhU77uGDJr8rgHJtI36WC_zGlBFe", lat: 25.051178, lng: 121.550703 },
-            { id: "1PZTiWllEzHIu2L1H3WeOsE7tzVqF-KmE", lat: 25.042486, lng: 121.502225 },
-            { id: "1GatxJFcz895c6ji011_cPyojiCjGNPsM", lat: 25.077919, lng: 121.392861 },
-            { id: "1X-49h825yFalk9-CrQxswCz37pwy5YQc", lat: 24.936092, lng: 121.214183 },
-            { id: "1dhaTbHWUKeiZ0rKw0R4r844TfYBA3N82", lat: 24.793036, lng: 120.973281 }
+            { file: "20230709_150126.jpg", lat: 25.032106, lng: 121.592934 },
+            { file: "20231008_190747.jpg", lat: 23.491339, lng: 120.447616 },
+            { file: "20231014_171148.jpg", lat: 24.952717, lng: 121.357082 },
+            { file: "20231104_171346.jpg", lat: 25.164304, lng: 121.577856 },
+            { file: "20240615_102207.jpg", lat: 25.017071, lng: 121.214192 },
+            { file: "20240713_141239.jpg", lat: 24.972103, lng: 121.531156 },
+            { file: "20240727_174704.jpg", lat: 22.652979, lng: 121.474908 },
+            { file: "20240915_093548.jpg", lat: 24.820611, lng: 121.177894 },
+            { file: "20241010_204711.jpg", lat: 22.753066, lng: 121.147085 },
+            { file: "20250628_154254.jpg", lat: 25.108544, lng: 121.843560 },
+            { file: "20250913_185432.jpg", lat: 25.073916, lng: 121.375597 },
+            { file: "PXL_20251025_011255164.jpg", lat: 24.453292, lng: 120.847200 },
+            { file: "PXL_20251122_054850437.jpg", lat: 25.048922, lng: 121.524233 },
+            { file: "PXL_20251122_122313977.TS-000.MP.jpg", lat: 25.083411, lng: 121.554978 },
+            { file: "PXL_20251129_043719259.MP.jpg", lat: 24.882717, lng: 121.326442 },
+            { file: "PXL_20251220_023604951.TS-000.jpg", lat: 25.051178, lng: 121.550703 },
+            { file: "PXL_20251220_062533161.TS-000.jpg", lat: 25.042486, lng: 121.502225 },
+            { file: "PXL_20251227_115304895.TS-000.MP.jpg", lat: 25.077919, lng: 121.392861 },
+            { file: "PXL_20260314_104654093.jpg", lat: 24.936092, lng: 121.214183 },
+            { file: "PXL_20260321_084933273.MP.jpg", lat: 24.793036, lng: 120.973281 }
         ];
 
         let myName = "";
@@ -139,38 +141,26 @@
         let activeRound = 0;
         let hostClockInterval = null;
 
-        // --- 🤖 手機端點擊圖釘優化配置 ---
         function initMap() {
             if (map) return;
-            map = L.map('map', { 
-                zoomControl: false,
-                tap: false // 關閉 Leaflet 預設舊型 tap 攔截，交由原生事件處理
-            }).setView([23.97, 120.97], 7);
-            
+            map = L.map('map', { zoomControl: false, tap: false }).setView([23.97, 120.97], 7);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
             const bounds = L.latLngBounds([21.0, 118.0], [26.5, 123.5]);
             map.setMaxBounds(bounds);
 
-            // 同時監聽 click 與手機端觸控結束，確保 100% 抓到經緯度
-            function handleMapClick(e) {
+            map.on('click', (e) => {
                 if (hasLocked) return;
                 currentGuess = e.latlng;
-                if (guessMarker) {
-                    guessMarker.setLatLng(currentGuess);
-                } else {
-                    guessMarker = L.marker(currentGuess).addTo(map);
-                }
-            }
-            map.on('click', handleMapClick);
+                if (guessMarker) guessMarker.setLatLng(currentGuess);
+                else guessMarker = L.marker(currentGuess).addTo(map);
+            });
         }
 
-        // --- 核心房間登入邏輯 ---
         function joinRoom() {
             const input = document.getElementById('username-input').value.trim();
             if (!input) return alert("請輸入暱稱！");
             myName = input;
 
-            // 判斷是否為金鑰關主
             if (myName.toLowerCase() === HOST_PASSWORD.toLowerCase()) {
                 isHost = true;
                 document.getElementById('host-lobby-zone').style.display = 'block';
@@ -181,43 +171,42 @@
             document.getElementById('login-screen').classList.remove('active');
             document.getElementById('lobby-screen').classList.add('active');
 
-            // 如果是新房間，初始化狀態機大腦
             db.ref('room/state').once('value', snapshot => {
                 if (!snapshot.exists()) {
-                    db.ref('room/state').set({ status: "lobby", round: 0, timer: 20 });
+                    db.ref('room/state').set({ status: "lobby", round: 0, timer: 30 });
                 }
             });
 
-            // 註冊或重連玩家節點
-            db.ref(`room/players/${myName}`).once('value', snapshot => {
-                if (!snapshot.exists()) {
-                    db.ref(`room/players/${myName}`).set({ score: 0, lastScore: 0 });
-                } else {
+            // 監聽並同步玩家自己的總分
+            db.ref(`room/players/${myName}`).on('value', snapshot => {
+                if (snapshot.exists()) {
                     totalScore = snapshot.val().score || 0;
                     document.getElementById('my-score').innerText = totalScore;
+                } else {
+                    db.ref(`room/players/${myName}`).set({ score: 0, lastScore: 0 });
                 }
             });
 
-            // 監聽線上人數
             db.ref('room/players').on('value', snapshot => {
                 if(snapshot.exists()) {
                     document.getElementById('lobby-count').innerText = Object.keys(snapshot.val()).length;
                 }
             });
 
-            // 監聽即時同步狀態機（支援隨時中途加入）
             db.ref('room/state').on('value', snapshot => {
                 const state = snapshot.val();
                 if (!state) return;
 
                 activeRound = state.round;
 
-                // 如果身為關主重啟/斷線回來，幫他接回計時器大腦
                 if (isHost && state.status === "playing" && !hostClockInterval) {
                     resumeHostClock(state.round, state.timer);
                 }
 
                 if (state.status === "lobby") {
+                    // 全局重置回大廳時，非關主玩家重置本地狀態
+                    if(!isHost) { totalScore = 0; document.getElementById('my-score').innerText = 0; }
+                    hasLocked = false; currentGuess = null;
                     switchScreen('lobby-screen');
                 } else if (state.status === "playing") {
                     startRoundUI(state.round, state.timer);
@@ -243,7 +232,6 @@
             if (correctMarker) map.removeLayer(correctMarker);
             if (linePath) map.removeLayer(linePath);
             
-            // 修正手機版：如果玩家中途加入或還沒鎖定，保留或重置按鈕
             if (!hasLocked) {
                 document.getElementById('lock-btn').disabled = false;
                 document.getElementById('lock-btn').style.background = "#06d6a0";
@@ -252,10 +240,12 @@
             
             document.getElementById('round-num').innerText = roundIdx + 1;
             document.getElementById('timer').innerText = serverTimer + "s";
-            document.getElementById('current-img').src = `https://drive.google.com/uc?export=view&id=${quizData[roundIdx].id}`;
+            
+            // 讀取相對路徑資料夾 photos 內的圖片
+            document.getElementById('current-img').src = `./photos/${quizData[roundIdx].file}`;
             
             if (serverTimer <= 0 && !hasLocked) {
-                lockAnswer(true); // 時間到自動強制結算
+                lockAnswer(true);
             }
         }
 
@@ -305,7 +295,6 @@
                 });
             });
 
-            // 在地圖底層畫出標準答案連線，供玩家回到答題分頁看或留存
             if (map && currentGuess) {
                 const target = quizData[roundIdx];
                 if (!correctMarker) {
@@ -318,14 +307,13 @@
                     linePath = L.polyline([currentGuess, [target.lat, target.lng]], {color: 'red'}).addTo(map);
                 }
             }
-            hasLocked = false; // 為下一輪重置狀態
+            hasLocked = false; 
         }
 
         function showFinalUI() {
             switchScreen('rank-screen');
             document.getElementById('rank-title').innerText = `🏆 最終大結算 🏆`;
             document.getElementById('next-round-hint').innerText = "🎉 破冰遊戲圓滿結束！";
-            if(isHost) document.getElementById('host-rank-zone').style.display = 'none';
         }
 
         function getDistance(lat1, lon1, lat2, lon2) {
@@ -337,15 +325,12 @@
         }
 
         // ==========================================
-        // 👑 關主核心時鐘大腦邏輯
+        // 👑 關主時鐘大腦與重置邏輯
         // ==========================================
-        function hostChangeState(status, round, timer = 20) {
+        function hostChangeState(status, round, timer = 30) {
             if (!isHost) return;
             db.ref('room/state').set({ status: status, round: round, timer: timer });
-            
-            if (status === 'playing') {
-                runHostClock(round, timer);
-            }
+            if (status === 'playing') runHostClock(round, timer);
         }
 
         function runHostClock(roundIdx, duration) {
@@ -359,17 +344,13 @@
                 if (currentTimer <= 0) {
                     clearInterval(hostClockInterval);
                     hostClockInterval = null;
-                    // 時間到，自動切入排行榜結算狀態
                     db.ref('room/state').update({ status: "ranking" });
                 }
             }, 1000);
         }
 
-        // 處理關主中途斷線、重新整理網頁回來的「時鐘接管」
         function resumeHostClock(roundIdx, remainingTime) {
-            if (remainingTime > 0) {
-                runHostClock(roundIdx, remainingTime);
-            }
+            if (remainingTime > 0) runHostClock(roundIdx, remainingTime);
         }
 
         function hostNextRound() {
@@ -380,14 +361,35 @@
             if (nextRound >= quizData.length) {
                 db.ref('room/state').update({ status: "finished" });
             } else {
-                // 重置每位玩家的單回合分數緩衝
                 db.ref('room/players').once('value', snapshot => {
                     const players = snapshot.val() || {};
                     Object.keys(players).forEach(name => {
                         db.ref(`room/players/${name}`).update({ lastScore: 0 });
                     });
                 });
-                hostChangeState('playing', nextRound, 20);
+                hostChangeState('playing', nextRound, 30);
+            }
+        }
+
+        // 🔄 關主一鍵重啟整輪遊戲的核心功能
+        function hostResetEntireGame() {
+            if (!isHost) return;
+            if (hostClockInterval) clearInterval(hostClockInterval);
+            hostClockInterval = null;
+
+            if (confirm("確定要清除所有人的分數，重新開始新的一輪遊戲嗎？")) {
+                // 1. 清空資料庫內所有玩家的分數
+                db.ref('room/players').once('value', snapshot => {
+                    const players = snapshot.val() || {};
+                    Object.keys(players).forEach(name => {
+                        db.ref(`room/players/${name}`).set({ score: 0, lastScore: 0 });
+                    });
+                });
+                
+                // 2. 將全域狀態退回大廳狀態
+                totalScore = 0;
+                document.getElementById('my-score').innerText = 0;
+                db.ref('room/state').set({ status: "lobby", round: 0, timer: 30 });
             }
         }
     </script>
