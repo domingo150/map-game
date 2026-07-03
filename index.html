@@ -132,7 +132,7 @@
         function initMap() {
             if (map) return;
             map = L.map('map', { zoomControl: false }).setView([23.97, 120.97], 7);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map;
+	    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
             
             // 台灣與離島邊界限定
             const bounds = L.latLngBounds([21.0, 118.0], [26.5, 123.5]);
@@ -142,7 +142,7 @@
                 if (hasLocked) return;
                 currentGuess = e.latlng;
                 if (guessMarker) guessMarker.setLatLng(currentGuess);
-                else guessMarker = L.marker(currentGuess).addTo(map;
+		else guessMarker = L.marker(currentGuess).addTo(map);
             });
         }
 
