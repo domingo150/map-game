@@ -3,35 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GeoGuessr 朋友破冰版</title>
+    <title>GeoGuessr 朋友破冰版 v2</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        body, html { height: 100%; width: 100%; overflow: hidden; background: #121214; color: #fff; }
+        body, html { height: 100%; width: 100%; overflow: hidden; background: #121214; color: #fff; -webkit-user-select: none; }
         .screen { display: none; height: 100%; width: 100%; flex-direction: column; justify-content: center; align-items: center; padding: 20px; }
         .active { display: flex !important; }
         
-        /* 登入與大廳 */
         .card { background: #202024; padding: 30px; border-radius: 12px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
         input { width: 100%; padding: 12px; margin: 15px 0; border: 2px solid #323238; background: #121214; color: #fff; border-radius: 6px; font-size: 16px; text-align: center; }
         button { width: 100%; padding: 12px; background: #00b0ff; color: #fff; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
         button:hover { background: #0091ea; }
         button:disabled { background: #4c4c52; cursor: not-allowed; }
 
-        /* 遊戲主畫面 */
         #game-screen { display: none; flex-direction: column; height: 100%; }
         #header { height: 60px; background: #202024; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; font-weight: bold; }
         #timer { font-size: 24px; color: #ffd166; }
-        #img-box { height: 38%; background: #000; display: flex; justify-content: center; align-items: center; position: relative; }
+        #img-box { height: 38%; background: #000; display: flex; justify-content: center; align-items: center; }
         #img-box img { max-height: 100%; max-width: 100%; object-fit: contain; }
-        #map { height: 48%; width: 100%; }
+        #map { height: 48%; width: 100%; z-index: 1; }
         #lock-btn { height: 8%; width: 100%; background: #06d6a0; font-size: 18px; }
 
-        /* 排行榜 */
-        .rank-list { width: 100%; max-width: 500px; background: #202024; border-radius: 12px; padding: 20px; overflow-y: auto; max-height: 60vh; }
+        .rank-list { width: 100%; max-width: 500px; background: #202024; border-radius: 12px; padding: 20px; overflow-y: auto; max-height: 50vh; margin: 15px 0; }
         .rank-item { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #323238; font-size: 18px; }
         .rank-item:first-child { color: #ffd166; font-weight: bold; }
-        .status-msg { margin-top: 15px; color: #a4a4a8; font-style: italic; }
+        .status-msg { margin-top: 10px; color: #a4a4a8; font-style: italic; }
+        .host-control { background: #ff5722; margin-top: 15px; }
     </style>
 </head>
 <body>
@@ -40,17 +38,21 @@
         <div class="card">
             <h2>GeoGuessr 朋友破冰</h2>
             <p style="color: #a4a4a8; margin-top: 5px;">輸入暱稱加入房間</p>
-            <input type="text" id="username-input" placeholder="你的名字" maxlength="10">
+            <input type="text" id="username-input" placeholder="你的名字 (關主請輸入 boss)" maxlength="10">
             <button id="join-btn" onclick="joinRoom()">加入遊戲</button>
         </div>
     </div>
 
     <div id="lobby-screen" class="screen">
         <div class="card">
-            <h3>等待遊戲開始...</h3>
-            <p style="margin: 20px 0; font-size: 18px;">目前在線玩家：<span id="lobby-count" style="color:#00b0ff;">0</span> / 20</p>
-            <button id="start-sync-btn" style="background:#ff5722; display:none;" onclick="hostStartGame()">身為關主：強制啟動</button>
-            <p class="status-msg">當第一位玩家進房時，同步計時器即會初始化。</p>
+            <h3 style="color:#00b0ff;">🎮 遊戲大廳 Waiting...</h3>
+            <p style="margin: 20px 0; font-size: 18px;">目前已進房人數：<span id="lobby-count" style="font-weight:bold; color:#ffd166;">0</span> 人</p>
+            
+            <div id="host-lobby-zone" style="display:none;">
+                <button class="host-control" onclick="hostChangeState('playing', 0)">主辦方：正式開始第一題</button>
+            </div>
+            
+            <p class="status-msg" id="lobby-guest-msg">等待關主發起遊戲，請勿離開此畫面...</p>
         </div>
     </div>
 
@@ -68,9 +70,14 @@
     </div>
 
     <div id="rank-screen" class="screen">
-        <h2 id="rank-title" style="margin-bottom: 20px; color:#ffd166;">第 1 輪 結束排行</h2>
+        <h2 id="rank-title" style="color:#ffd166;">第 1 輪 結束排行</h2>
         <div class="rank-list" id="rank-container"></div>
-        <p class="status-msg" id="next-round-hint">下回合即將在幾秒後自動開始...</p>
+        
+        <div id="host-rank-zone" style="display:none; width:100%; max-width:500px;">
+            <button id="host-next-btn" class="host-control" onclick="hostNextRound()">主辦方：進入下一題</button>
+        </div>
+
+        <p class="status-msg" id="next-round-hint">等待關主切換下一輪...</p>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -79,23 +86,26 @@
 
     <script>
         // ==========================================
-        // 🛠️ CONFIG 區塊：請置換成你的 Firebase 資料
+        // 🛠️ CONFIG 區塊：請務必貼回你原本的 Firebase 設定
         // ==========================================
-	const firebaseConfig = {
-		  apiKey: "AIzaSyCLVPqDnLhjF_pj0sISOR73YFciNyeAd4I",
- 		  authDomain: "my-map-game-fd694.firebaseapp.com",
-		  databaseURL: "https://my-map-game-fd694-default-rtdb.asia-southeast1.firebasedatabase.app",
-		  projectId: "my-map-game-fd694",
-		  storageBucket: "my-map-game-fd694.firebasestorage.app",
-		  messagingSenderId: "749340315291",
-		  appId: "1:749340315291:web:f6486949cbef4d5287403e",
-		  measurementId: "G-WFZ8HPJJ2H"
-	};
-        firebase.initializeApp(firebaseConfig);
+        const firebaseConfig = {
+                  apiKey: "AIzaSyCLVPqDnLhjF_pj0sISOR73YFciNyeAd4I",
+                  authDomain: "my-map-game-fd694.firebaseapp.com",
+                  databaseURL: "https://my-map-game-fd694-default-rtdb.asia-southeast1.firebasedatabase.app",
+                  projectId: "my-map-game-fd694",
+                  storageBucket: "my-map-game-fd694.firebasestorage.app",
+                  messagingSenderId: "749340315291",
+                  appId: "1:749340315291:web:f6486949cbef4d5287403e",
+                  measurementId: "G-WFZ8HPJJ2H"
+        };
+	firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
+        // 🔐 關主永久金鑰（如果名字打這個，不管斷線幾次都會判定成關主）
+        const HOST_PASSWORD = "boss"; 
+
         // ==========================================
-        // 🗺️ 題庫資料 (已完全代入你提供的20張地圖數據)
+        // 🗺️ 題庫資料
         // ==========================================
         const quizData = [
             { id: "1PYcSps-jN60FowJK3D4GatANPhapoAgR", lat: 25.032106, lng: 121.592934 },
@@ -120,64 +130,92 @@
             { id: "1dhaTbHWUKeiZ0rKw0R4r844TfYBA3N82", lat: 24.793036, lng: 120.973281 }
         ];
 
-        // 遊戲狀態與參數
         let myName = "";
         let map, guessMarker, correctMarker, linePath;
         let currentGuess = null;
         let totalScore = 0;
         let hasLocked = false;
         let isHost = false;
+        let activeRound = 0;
+        let hostClockInterval = null;
 
-        // --- 地圖初始化運算 ---
+        // --- 🤖 手機端點擊圖釘優化配置 ---
         function initMap() {
             if (map) return;
-            map = L.map('map', { zoomControl: false }).setView([23.97, 120.97], 7);
-	    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            map = L.map('map', { 
+                zoomControl: false,
+                tap: false // 關閉 Leaflet 預設舊型 tap 攔截，交由原生事件處理
+            }).setView([23.97, 120.97], 7);
             
-            // 台灣與離島邊界限定
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
             const bounds = L.latLngBounds([21.0, 118.0], [26.5, 123.5]);
             map.setMaxBounds(bounds);
 
-            map.on('click', (e) => {
+            // 同時監聽 click 與手機端觸控結束，確保 100% 抓到經緯度
+            function handleMapClick(e) {
                 if (hasLocked) return;
                 currentGuess = e.latlng;
-                if (guessMarker) guessMarker.setLatLng(currentGuess);
-		else guessMarker = L.marker(currentGuess).addTo(map);
-            });
+                if (guessMarker) {
+                    guessMarker.setLatLng(currentGuess);
+                } else {
+                    guessMarker = L.marker(currentGuess).addTo(map);
+                }
+            }
+            map.on('click', handleMapClick);
         }
 
-        // --- 核心流程：加入房間與狀態監聽 ---
+        // --- 核心房間登入邏輯 ---
         function joinRoom() {
             const input = document.getElementById('username-input').value.trim();
             if (!input) return alert("請輸入暱稱！");
             myName = input;
 
+            // 判斷是否為金鑰關主
+            if (myName.toLowerCase() === HOST_PASSWORD.toLowerCase()) {
+                isHost = true;
+                document.getElementById('host-lobby-zone').style.display = 'block';
+                document.getElementById('host-rank-zone').style.display = 'block';
+                document.getElementById('lobby-guest-msg').innerText = "🔑 您已身為認證關主，請等待玩家到齊後點擊開始。";
+            }
+
             document.getElementById('login-screen').classList.remove('active');
             document.getElementById('lobby-screen').classList.add('active');
 
-            // 檢查是否為第一個進房的人（設為管理員控場）
-            db.ref('room/players').once('value', snapshot => {
+            // 如果是新房間，初始化狀態機大腦
+            db.ref('room/state').once('value', snapshot => {
                 if (!snapshot.exists()) {
-                    isHost = true;
-                    document.getElementById('start-sync-btn').style.display = 'block';
-                    // 初始化全自動時間軸大腦
                     db.ref('room/state').set({ status: "lobby", round: 0, timer: 20 });
                 }
-                // 註冊玩家個人節點
-                db.ref(`room/players/${myName}`).set({ score: 0, lastScore: 0, connected: true });
             });
 
-            // 監聽線上總人數
+            // 註冊或重連玩家節點
+            db.ref(`room/players/${myName}`).once('value', snapshot => {
+                if (!snapshot.exists()) {
+                    db.ref(`room/players/${myName}`).set({ score: 0, lastScore: 0 });
+                } else {
+                    totalScore = snapshot.val().score || 0;
+                    document.getElementById('my-score').innerText = totalScore;
+                }
+            });
+
+            // 監聽線上人數
             db.ref('room/players').on('value', snapshot => {
                 if(snapshot.exists()) {
                     document.getElementById('lobby-count').innerText = Object.keys(snapshot.val()).length;
                 }
             });
 
-            // 核心：監聽全自動狀態機同步
+            // 監聽即時同步狀態機（支援隨時中途加入）
             db.ref('room/state').on('value', snapshot => {
                 const state = snapshot.val();
                 if (!state) return;
+
+                activeRound = state.round;
+
+                // 如果身為關主重啟/斷線回來，幫他接回計時器大腦
+                if (isHost && state.status === "playing" && !hostClockInterval) {
+                    resumeHostClock(state.round, state.timer);
+                }
 
                 if (state.status === "lobby") {
                     switchScreen('lobby-screen');
@@ -198,56 +236,58 @@
             else document.getElementById(id).classList.add('active');
         }
 
-        // --- 答題畫面同步更新 ---
         function startRoundUI(roundIdx, serverTimer) {
             switchScreen('game-screen');
             initMap();
             
-            // 清理上一輪地圖痕跡
             if (correctMarker) map.removeLayer(correctMarker);
             if (linePath) map.removeLayer(linePath);
-            if (guessMarker) { map.removeLayer(guessMarker); guessMarker = null; }
             
-            hasLocked = false;
-            currentGuess = null;
-            document.getElementById('lock-btn').disabled = false;
-            document.getElementById('lock-btn').style.background = "#06d6a0";
-            document.getElementById('lock-btn').innerText = "鎖定此地點！";
+            // 修正手機版：如果玩家中途加入或還沒鎖定，保留或重置按鈕
+            if (!hasLocked) {
+                document.getElementById('lock-btn').disabled = false;
+                document.getElementById('lock-btn').style.background = "#06d6a0";
+                document.getElementById('lock-btn').innerText = "鎖定此地點！";
+            }
             
             document.getElementById('round-num').innerText = roundIdx + 1;
             document.getElementById('timer').innerText = serverTimer + "s";
-
-            // 改裝成 Google Drive 直連網址格式
-            const photoId = quizData[roundIdx].id;
-            document.getElementById('current-img').src = `https://drive.google.com/uc?export=view&id=${photoId}`;
+            document.getElementById('current-img').src = `https://drive.google.com/uc?export=view&id=${quizData[roundIdx].id}`;
+            
+            if (serverTimer <= 0 && !hasLocked) {
+                lockAnswer(true); // 時間到自動強制結算
+            }
         }
 
-        function lockAnswer() {
-            if (!currentGuess) return alert("請先在地圖上點選你猜的位置！");
+        function lockAnswer(isAutoTimeout = false) {
             hasLocked = true;
             document.getElementById('lock-btn').disabled = true;
-            document.getElementById('lock-btn').style.background = "#6c757d";
-            document.getElementById('lock-btn').innerText = "已鎖定，等待時間結束...";
+            document.getElementById('lock-btn').style.background = "#4c4c52";
+            document.getElementById('lock-btn').innerText = isAutoTimeout ? "時間到！已自動送出" : "已鎖定，等待時間結束...";
 
-            // 計算分數
-            const target = quizData[parseInt(document.getElementById('round-num').innerText) - 1];
-            const dist = getDistance(currentGuess.lat, currentGuess.lng, target.lat, target.lng);
-            // 5000分滿分，每公里扣12分
-            const roundScore = Math.max(0, 5000 - Math.round(dist * 12));
-            totalScore += roundScore;
+            let roundScore = 0;
+            const target = quizData[activeRound];
+
+            if (currentGuess) {
+                const dist = getDistance(currentGuess.lat, currentGuess.lng, target.lat, target.lng);
+                roundScore = Math.max(0, 5000 - Math.round(dist * 12));
+                totalScore += roundScore;
+            }
 
             document.getElementById('my-score').innerText = totalScore;
-            // 回傳數據到資料庫
             db.ref(`room/players/${myName}`).update({ score: totalScore, lastScore: roundScore });
         }
 
-        // --- 排行榜畫面同步更新 ---
         function showRankUI(roundIdx, serverTimer) {
             switchScreen('rank-screen');
             document.getElementById('rank-title').innerText = `第 ${roundIdx + 1} 輪 結束排行`;
-            document.getElementById('next-round-hint').innerText = `下一回合即將在 ${serverTimer} 秒後自動開始...`;
+            
+            if (isHost) {
+                document.getElementById('next-round-hint').innerText = "👑 您是關主，請點擊下方按鈕推進下一關。";
+            } else {
+                document.getElementById('next-round-hint').innerText = "等待關主開啟下一輪題目...";
+            }
 
-            // 抓取即時數據庫排行並渲染
             db.ref('room/players').once('value', snapshot => {
                 const players = snapshot.val() || {};
                 const sorted = Object.keys(players)
@@ -264,15 +304,30 @@
                         </div>`;
                 });
             });
+
+            // 在地圖底層畫出標準答案連線，供玩家回到答題分頁看或留存
+            if (map && currentGuess) {
+                const target = quizData[roundIdx];
+                if (!correctMarker) {
+                    correctMarker = L.marker([target.lat, target.lng], {
+                        icon: L.icon({
+                            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+                            iconSize: [25, 41], iconAnchor: [12, 41]
+                        })
+                    }).addTo(map);
+                    linePath = L.polyline([currentGuess, [target.lat, target.lng]], {color: 'red'}).addTo(map);
+                }
+            }
+            hasLocked = false; // 為下一輪重置狀態
         }
 
         function showFinalUI() {
             switchScreen('rank-screen');
             document.getElementById('rank-title').innerText = `🏆 最終大結算 🏆`;
-            document.getElementById('next-round-hint').innerText = "遊戲結束！感謝大家參與破冰遊戲！";
+            document.getElementById('next-round-hint').innerText = "🎉 破冰遊戲圓滿結束！";
+            if(isHost) document.getElementById('host-rank-zone').style.display = 'none';
         }
 
-        // --- 數學計算（大圓距離半徑） ---
         function getDistance(lat1, lon1, lat2, lon2) {
             const R = 6371;
             const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -282,42 +337,58 @@
         }
 
         // ==========================================
-        // ⏱️ 關主大腦時鐘 (僅在第一位進入的玩家端執行監聽維護)
+        // 👑 關主核心時鐘大腦邏輯
         // ==========================================
-        function hostStartGame() {
-            document.getElementById('start-sync-btn').style.display = 'none';
-            runServerTimeline(0);
+        function hostChangeState(status, round, timer = 20) {
+            if (!isHost) return;
+            db.ref('room/state').set({ status: status, round: round, timer: timer });
+            
+            if (status === 'playing') {
+                runHostClock(round, timer);
+            }
         }
 
-        function runServerTimeline(roundIdx) {
-            if (roundIdx >= quizData.length) {
-                db.ref('room/state').set({ status: "finished" });
-                return;
-            }
+        function runHostClock(roundIdx, duration) {
+            if (hostClockInterval) clearInterval(hostClockInterval);
+            let currentTimer = duration;
 
-            // A. 答題階段計時器 (30秒)
-            let timer = 30;
-            const playInterval = setInterval(() => {
-                timer--;
-                db.ref('room/state').set({ status: "playing", round: roundIdx, timer: timer });
+            hostClockInterval = setInterval(() => {
+                currentTimer--;
+                db.ref('room/state').update({ timer: currentTimer });
                 
-                if (timer <= 0) {
-                    clearInterval(playInterval);
-                    
-                    // B. 轉入排行榜階段 (計時 8 秒)
-                    let rankTimer = 8;
-                    const rankInterval = setInterval(() => {
-                        rankTimer--;
-                        db.ref('room/state').set({ status: "ranking", round: roundIdx, timer: rankTimer });
-                        
-                        if (rankTimer <= 0) {
-                            clearInterval(rankInterval);
-                            // 往下一題推進
-                            runServerTimeline(roundIdx + 1);
-                        }
-                    }, 1000);
+                if (currentTimer <= 0) {
+                    clearInterval(hostClockInterval);
+                    hostClockInterval = null;
+                    // 時間到，自動切入排行榜結算狀態
+                    db.ref('room/state').update({ status: "ranking" });
                 }
             }, 1000);
+        }
+
+        // 處理關主中途斷線、重新整理網頁回來的「時鐘接管」
+        function resumeHostClock(roundIdx, remainingTime) {
+            if (remainingTime > 0) {
+                runHostClock(roundIdx, remainingTime);
+            }
+        }
+
+        function hostNextRound() {
+            if (!isHost) return;
+            if (hostClockInterval) clearInterval(hostClockInterval);
+            
+            let nextRound = activeRound + 1;
+            if (nextRound >= quizData.length) {
+                db.ref('room/state').update({ status: "finished" });
+            } else {
+                // 重置每位玩家的單回合分數緩衝
+                db.ref('room/players').once('value', snapshot => {
+                    const players = snapshot.val() || {};
+                    Object.keys(players).forEach(name => {
+                        db.ref(`room/players/${name}`).update({ lastScore: 0 });
+                    });
+                });
+                hostChangeState('playing', nextRound, 20);
+            }
         }
     </script>
 </body>
